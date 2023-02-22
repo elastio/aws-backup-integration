@@ -389,6 +389,11 @@ From the Elastio Tenant.
 2. View the import and iscan jobs to validate the process.
 3. Once complete, from the job list, select the recovery point id and view the results.  
 
+The results from the Elastio Tenant:
+
+
+The results in the S3 bucket:
+
 ![image](https://user-images.githubusercontent.com/81738703/219956284-582a780c-463b-4b69-81b7-8500b44a7962.png)
 
 ### Conclusion
