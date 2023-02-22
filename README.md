@@ -6,7 +6,7 @@ Typically, the first time backups are tested at the point of recovery. Those bac
 
 Using Elastio, AWS Backup customers have confidence that their data is recoverable in case of ransomware, corruption, or any other threat. Due to its compression and deduplication capabilities, customers can increase their retention period while simultaneously reducing their storage costs. The entire process is run from within the customer’s AWS Organization. Elastio cannot view, access, or gain custody of customer data. By implementing Elastio, customers can better meet compliance requirements and decrease their overall risk and spend. 
 
-Elastio ingests AWS Backup recovery points into its ScaleZTM storage engine, scanning backups in real-time for ransomware, malware, corruption, and other factors that affect restorability. Once configured, the integration is seamless, using Amazon EventBridge to receive notifications as new recovery points are created with the customer’s existing AWS Backup Vaults. Scan results can be consumed and alerted in real-time by security tools such as AWS Audit Manager, AWS Security Hub, Splunk, and Datadog. 
+Elastio ingests AWS Backup recovery points into its ScaleZ storage engine, scanning backups in real-time for ransomware, malware, corruption, and other factors that affect restorability. Once configured, the integration is seamless, using Amazon EventBridge to receive notifications as new recovery points are created with the customer’s existing AWS Backup Vaults. Scan results can be consumed and alerted in real-time by security tools such as AWS Audit Manager, AWS Security Hub, Splunk, and Datadog. 
 
 ![Picture1](https://user-images.githubusercontent.com/81738703/219877966-e0eea261-0946-412a-80c3-d03511c55fa7.png)
 
