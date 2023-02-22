@@ -1,65 +1,53 @@
 # AWS Backup Elastio Integration to Help Protect Data from Ransomware, Malware, and Corruption.
 
-Authored by: Adam Nelson, CTO of Elastio, Cris Daniluk, AWS Security Architect.
+Authored by: Adam Nelson, CTO of Elastio, Cris Daniluk, AWS Security Architect, RhythmicTech.
 
-One of the challenges with using AWS Backup is that customers often cannot be sure if their recovery points are usable and free from cyber threats and corruption. This can spread infected copies of data across different regions and accounts and invalidate local restores and disaster recovery. 
+Typically, the first time backups are tested at the point of recovery. Those backups often contain latent corruption, malware, and files that cannot be restored due to ransomware. Elastio now integrates with AWS Backup to continuously scan backups for these threats, recovery testing them to ensure a successful restoration, and quickly identifying the last clean recovery point. 
 
-Elastio scans for threats and corruption in backup data to address this issue, followed by recovery testing to ensure fast and clean restoration. This minimizes the risk of further infecting other resources and ensures that customers can quickly and easily recover their data.
+Using Elastio, AWS Backup customers have confidence that their data is recoverable in case of ransomware, corruption, or any other threat. Due to its compression and deduplication capabilities, customers can increase their retention period while simultaneously reducing their storage costs. The entire process is run from within the customer’s AWS Organization. Elastio cannot view, access, or gain custody of customer data. By implementing Elastio, customers can better meet compliance requirements and decrease their overall risk and spend. 
 
-The results of each scan can be made available to Amazon S3 or sent to popular security platforms such as AWS Audit Manager, AWS SecurityHub, Splunk, and Datadog. This gives customers greater visibility into their backup data and allows them to protect against potential threats and corruption proactively.
+Elastio ingests AWS Backup recovery points into its ScaleZTM storage engine, scanning backups in real-time for ransomware, malware, corruption, and other factors that affect restorability. Once configured, the integration is seamless, using Amazon EventBridge to receive notifications as new recovery points are created with the customer’s existing AWS Backup Vaults. Scan results can be consumed and alerted in real-time by security tools such as AWS Audit Manager, AWS Security Hub, Splunk, and Datadog. 
 
 ![Picture1](https://user-images.githubusercontent.com/81738703/219877966-e0eea261-0946-412a-80c3-d03511c55fa7.png)
 
-In the event that a cyber threat is detected and needs to be remediated, Elastio provides the ability to provide historical context and reconstitute material information for forensic interrogation from its cyber vault. 
+If a cyber threat is detected and needs to be remediated, Elastio provides the ability to provide historical context and reconstitute material information for forensic interrogation from its cyber vault. 
 
-Customers can recover entire instances, selected volumes, or individual files in a secure and isolated environment.  The entire process is run from within the customer’s AWS account. Elastio cannot view, access, or gain custody of customer data. 
-
-Elastio imports AWS Backups as globally deduplicated and compressed, resulting in improved scan performance, shorter recovery times, and cost savings. The global deduplication process eliminates duplicated data blocks across multiple snapshots, reducing the amount of object storage required to store them. The compression process reduces the size of the snapshots, further reducing the storage and time required to transfer the data.
+In one click, customers can easily recover entire instances, selected volumes, or individual files to a secure and isolated environment. Elastio is also designed to integrate with existing incident response procedures. It supports sending logs, events, and alerts to leading SIEMs.
 
 ## AWS Backup and Elastio Architectures
 
-### Single Account Deployment
+### Single Account Configuration
 
 ![Picture2](https://user-images.githubusercontent.com/81738703/219877974-18b98685-e50a-49f3-971f-a80060b24ba5.png)
 
-1. AWS Backup creates a recovery point for an EC2 instance.
-2. An EventBridge event is triggered when the backup for the EC2 instance is completed.
-3. The event triggers a Lambda function that invokes an Elastio processing pipeline. The pipeline imports the recovery point and performs a cyber scan on all associated objects, including the EBS volumes and the AMI. 
-4. After the pipeline completes, detailed artifacts are generated and sent to EventBridge. 
+1. AWS Backup creates a recovery point for an Amazon EC2 instance in the Workload Account.
+2. An Amazon EventBridge event is triggered when the backup for the Amazon EC2 instance is completed.
+3. The event triggers an AWS Lambda function that invokes an Elastio processing pipeline. The pipeline imports the recovery point and performs a cyber scan on all associated objects, including the Amazon EBS volumes and the Amazon Machine Image.
+4. After the pipeline completes, detailed artifacts are generated and sent to Amazon EventBridge. 
 5. A Job Status Lambda function is triggered to copy the artifacts to an Amazon S3 bucket. 
-6. The artifacts are stored in S3. Alternatively, the lambda can be modified to send artifacts to any system, including SecurityHub, Datadog, and Splunk.
+6. The artifacts are stored in an Amazon S3 bucket. Alternatively, the AWS Lambda can be modified to send artifacts to any system, including AWS Security Hub, Datadog, and Splunk.
 
 ### Cross Account Configuration
 
-1. AWS Backup creates a recovery point for an EC2 instance.
-2. An EventBridge event is triggered when the backup for the EC2 instance is completed.
-3. The event triggers a Lambda function that invokes an Elastio processing pipeline. The pipeline imports the recovery point and performs a cyber scan on all associated objects, including the EBS volumes and the AMI. 
-4. After the pipeline completes, detailed artifacts are generated and sent to EventBridge. 
-5. A Job Status Lambda function is triggered to copy the artifacts to an Amazon S3 bucket. 
-6. The artifacts are stored in S3. Alternatively, the lambda can be modified to send artifacts to any system, including SecurityHub, Datadog, and Splunk.
-
-
-### Span of Control Account Isolation
-
 ![Picture3](https://user-images.githubusercontent.com/81738703/219877989-478ccc6f-1780-4064-a39c-48a0b3965b61.png)
 
-1. AWS Backup creates a recovery point for an EC2 instance.
-2. An EventBridge event is triggered when the backup for the EC2 instance is completed.
-3. The event triggers a Lambda function that invokes an Elastio processing pipeline. The pipeline imports the recovery point and performs a cyber scan on all associated objects, including the EBS volumes and the AMI. 
-4. After the pipeline completes, detailed artifacts are generated and sent to EventBridge. 
-5. A Job Status Lambda function is triggered to copy the artifacts to an Amazon S3 bucket. You can learn more about the Job Status Lambda function here.
-6. The artifacts are stored in S3. Alternatively, the lambda can be modified to send artifacts to any system, including SecurityHub, Datadog, and Splunk.
+1. AWS Backup creates a recovery point for an Amazon EC2 instance.
+2. The Default Event Bridge event is triggered when the backup for the Amazon EC2 instance is completed, and the copy is initiated.
+3. When the copy is completed, the Job Status Event Bridge triggers an AWS Lambda function that invokes an Elastio processing pipeline. 
+4. The pipeline imports the recovery point and performs a cyber scan on all associated objects, including the Amazon EBS volumes and the Amazon Machine Image.
+5. After the pipeline completes, detailed artifacts are generated and sent to Amazon EventBridge. 
+6. A Job Status Lambda function is triggered to copy the artifacts to an Amazon S3 bucket. The artifacts are stored in an Amazon S3 bucket. Alternatively, the AWS Lambda can be modified to send artifacts to any system, including AWS Security Hub, Datadog, and Splunk.
+
 
 ### Deploying AWS Backup CloudFormation
 
 1. Log in to the AWS Account where the AWS Backup Vault exists.
-2. Review the YAML below and deploy by Selecting CloudFormation and importing the YAML file.
-3. From CloudFormation console, select Create Stack, Select "With New Resources".
-4. Select "Upload Template File" and upload the YAML file.
-5. Enter the stack name "aws-backup-elastio-integration"
-6. Enter an S3 bucket name.  
-7. Enter the ARN of Lamdba "elastio-bg-jobs-service-aws-backup-rp-import"
-8. Optionally use all defaults and follow the wizard to create the stack.
+2. From CloudFormation console, select Create Stack, Select "With New Resources".
+3. Select "Upload Template File" and upload the YAML file.
+4. Enter the stack name "aws-backup-elastio-integration"
+5. Enter an S3 bucket name.  
+6. Enter the ARN of Lamdba "elastio-bg-jobs-service-aws-backup-rp-import"
+7. Optionally use all defaults and follow the wizard to create the stack.
 
 NOTE: By using the Lambda provided in the AWS Backup Elastic integration, all backups will undergo scanning for all policies. In a future blog, instructions will be given on creating custom backup rules, which will involve modifying the Lambda that handles new AWS Backup events to exclude certain backups based on specific criteria.
 
@@ -404,6 +392,6 @@ From the Elastio Tenant.
 ![image](https://user-images.githubusercontent.com/81738703/219956284-582a780c-463b-4b69-81b7-8500b44a7962.png)
 
 ### Conclusion
-By using Elastio to enhance AWS Backup, organizations can secure their cloud data, reduce data loss and downtime, and improve Recovery Time Objectives (RTO) in case of an attack or application failure.   Elastio imports AWS Backups as globally deduplicated and compressed, resulting in improved scan performance, shorter recovery times, and cost savings.
+By using Elastio to enhance AWS Backup, organizations can secure their cloud data, reduce data loss and downtime, and improve Recovery Time Objectives (RTO) in case of an attack or application failure. Elastio imports AWS Backups as globally deduplicated and compressed, resulting in improved scan performance, shorter recovery times, and cost savings.
 
 AWS customers can contact [sales@elastio.com](mailto:sales@elastio.com) to set up a demo of Elastio or they can download the product from [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-jvce2rake3i3i?sr=0-1&ref_=beagle&applicationId=AWSMPContessa). A free tier that covers 1TB of protected data with a seven-day retention period and a free 30-day trial with full functionality and unlimited retention are both available. See [Elastio’s pricing page](https://elastio.com/pricing/) for full details. 
