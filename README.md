@@ -390,7 +390,7 @@ From the Elastio Tenant.
 3. Once complete, from the job list, select the recovery point id and view the results.  
 
 The results from the Elastio Tenant:
-
+![image](https://user-images.githubusercontent.com/81738703/220642633-9c2d373a-3c0f-4e39-9248-e18db6f2b8a3.png)
 
 The results in the S3 bucket:
 
