@@ -1,0 +1,312 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Component that integrates AWS Backup with Elastio 
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Reporter Configuration
+        Parameters: 
+            - LogsBucketName  
+            - ElastioImportLambdaARN            
+    ParameterLabels:
+      LogsBucketName:
+        default: S3 Bucket for Elastio Logs and Data 
+      ElastioImportLambdaARN:
+        default: The ARN of Elastio Lambda for importing a RecoveryPoint
+Parameters:
+  LogsBucketName:
+    Description: The S3 Bucket Name where the Job Logs and Reports are to be stored. 
+    Type: String
+  ElastioImportLambdaARN:
+    Description: The ARN of Elastio Lambda for importing a RecoveryPoint
+    Type: String     
+Resources: 
+
+  ProcessAWSBackupVaultStatusEventRuleForElastio: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: ProcessAWSBackupVaultStatusEventRuleForElastio
+      Description: "Rule to direct AWS Backup Events to Status Handler Lambda"
+      State: "ENABLED"
+      EventPattern: 
+        source:
+          - 'aws.backup'
+        detail-type:
+          - 'Backup Job State Change'
+      Targets: 
+        - Arn: !GetAtt
+                  - ElastioStatusHandlerLambda
+                  - Arn
+          Id: "ProcessAWSBackupEventsUsingLambda" 
+          
+  ProcessAWSBackupVaultStatusEventRuleForElastioInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ElastioStatusHandlerLambda
+      Principal: events.amazonaws.com
+      SourceArn: !Sub ${ProcessAWSBackupVaultStatusEventRuleForElastio.Arn}
+      
+  ElastioStatusHandlerLambda:
+    Type: AWS::Lambda::Function
+    Metadata:
+        cfn_nag:
+          rules_to_suppress:
+            - id: W89
+              reason: "NA"
+            - id: W92
+              reason: "NA"    
+    Properties:
+      Code:
+        ZipFile: |-
+          #!/usr/bin/env python
+          # -*- coding: utf-8 -*-
+          import json
+          import boto3
+          import urllib3
+          import traceback
+          import os
+          import shutil
+          from urllib.parse import urlparse
+          from botocore.exceptions import ClientError
+          def lambda_handler(event, context):
+            try:
+                print(f'Handling event : {event}')
+                if event.get('source') == 'elastio.iscan':
+                    job_event_type = 'scan_results'
+                    event['job_type']=job_event_type
+                    event['job_id']=event.get('id')
+                    save_event_data_to_s3(event['id'], event)
+                
+                #Process AWS Backup Job completion event to trigger Elastio Scan
+                elif event.get('source') == 'aws.backup':
+                    event_detail = event.get('detail')                
+                    job_event_state = event_detail.get('state')
+                    if not job_event_state:
+                        # Hack
+                        job_event_state = event_detail.get('status')
+                    if job_event_state in ('COMPLETED'):
+                        try:
+                            backupvault_name = event_detail.get('backupVaultName')
+                            job_id = event_detail.get('backupJobId')
+                            backup_client = boto3.client('backup')
+                            try:
+                                # boto3 API  /services/backup.html#Backup.Client.describe_backup_job
+                                backup_info = backup_client.describe_backup_job(BackupJobId=job_id)
+                                if 'ResponseMetadata' in backup_info:
+                                    del backup_info['ResponseMetadata']
+                    
+                                print(f"backup_info : {backup_info}")      
+                            except botocore.exceptions.ClientError as e:
+                                    if e.response['Error']['Code'] == "ResourceNotFoundException":
+                                        print(f"Backup Job with ID : {job_id} not found")
+                                    else:
+                                        print(f"Error : {e} processing describe_backup_job")
+                    
+                            recovery_point_arn = backup_info['RecoveryPointArn']  
+                            
+                            elastio_status_eb = os.environ.get('ElastioStatusEB') 
+                            if not elastio_status_eb:
+                                elastio_status_eb = 'elastio-scan-results'
+                              
+                            elastio_lambda_arn = os.environ.get('ElastioImportLambdaARN') 
+                            if not elastio_lambda_arn:
+                                raise Exception('ElastioImportLambdaARN is missing!') 
+                              
+                            #invoke the lambda
+                            input_params = {
+                                              "aws_backup_vault": backupvault_name,
+                                              "aws_backup_rp_arn": recovery_point_arn,
+                                              "iscan": {
+                                                "ransomware": True,
+                                                "malware": True,
+                                                "event_bridge_bus": elastio_status_eb
+                                              }
+                                            }
+                            print(f'invoking {elastio_lambda_arn} with {input_params}')
+                            try:
+                                boto3.client('lambda').invoke(
+                                    FunctionName=elastio_lambda_arn,
+                                    InvocationType='Event',
+                                    Payload=json.dumps(input_params)
+                                )
+    
+                            except (ClientError, Exception):  # pylint: disable = W0703
+                                var = traceback.format_exc()
+                                print(f"Error {var} processing invoke")                         
+                            
+                        except Exception:
+                            var = traceback.format_exc()
+                            print(f"Error {var} in lambda_handler while handling elastio.iscan")
+            except Exception as e:
+                print(f'{e}')
+                
+          def save_event_data_to_s3(job_id, json_content):
+              """
+              This method is responsible for writing the job info (jsonContent) to the
+              folder (destFolder) under the key (jobId)
+              """
+              s3_log_bucket = os.environ.get('LogsBucketName') 
+              if not s3_log_bucket:
+                  raise Exception('LogsBucketName is missing!') 
+              s3_log_location = 'elastio-scan-results/' + job_id + '.json'
+
+              try:
+                  print(f"Persisting event data to : {s3_log_bucket} at {s3_log_location}")
+                  s3_client = boto3.client('s3')
+                  print(f"Logging to : {s3_log_bucket} at {s3_log_location}")
+                  s3_client.put_object(Body=json.dumps(json_content,
+                                                       default=str, separators=(',', ':')),
+                                       Bucket=s3_log_bucket,
+                                       Key=s3_log_location, ACL='bucket-owner-full-control',
+                                       Tagging='Source=ElastioResults')
+                                            
+              except (ClientError, Exception):
+                  var = traceback.format_exc()
+                  print(f"Error {var} processing save_event_data_to_s3")                
+
+      Description: Handle AWS Backup and Elastio Scan results
+      Handler: index.lambda_handler
+      Role : !GetAtt ElastioStatusHandlerLambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 900
+      Environment:
+        Variables:
+          ElastioStatusEB : !Ref ElastioJobStatusEventBus 
+          LogsBucketName: !Ref LogsBucketName
+          ElastioImportLambdaARN : !Ref ElastioImportLambdaARN
+
+  ElastioJobStatusEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Join [ '', ['ElastioJobStatusEventBus-', !Ref 'AWS::AccountId'] ]
+
+  ElastioStatusEventBridgeInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref ElastioStatusHandlerLambda
+      Principal: events.amazonaws.com
+      SourceArn: !Sub ${ElastioStatusEventRule.Arn}    
+  
+  ElastioStatusEventRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: "Send Elastio events to Lambda"
+      EventBusName: !Ref ElastioJobStatusEventBus
+      State: "ENABLED"
+      EventPattern: 
+        source:
+          - 'elastio.iscan'
+      Targets: 
+        - Arn: !GetAtt ElastioStatusHandlerLambda.Arn
+          Id: "ElastioStatusEvent"
+  
+  ElastioJobStatusEventBusPolicy:
+    Type: AWS::Events::EventBusPolicy
+    Properties: 
+        EventBusName: !Ref ElastioJobStatusEventBus
+        StatementId: "ElastioStatusEventBridgePolicyStmt"
+        Statement: 
+            Effect: "Allow"
+            Principal: "*"
+            Action: "events:PutEvents"
+            Resource: !GetAtt "ElastioJobStatusEventBus.Arn"
+
+  ElastioStatusHandlerLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Metadata:    
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+          - id: W11
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+          - Effect: Allow
+            Principal:
+              Service: 'quicksight.amazonaws.com'
+            Action:
+            - 'sts:AssumeRole'              
+      ManagedPolicyArns:
+          - !Sub 'arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+          - PolicyName: invokeLambda
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action:
+                - lambda:InvokeFunction
+                Resource: '*'           
+          - PolicyName: s3Permissions
+            PolicyDocument:
+              Statement:
+              - Effect: Allow
+                Action:
+                  - kms:GenerateDataKey
+                  - kms:Decrypt
+                  - kms:Encrypt                  
+                  - s3:PutObject*
+                  - s3:GetObject*
+                  - s3:DeleteObject
+                  - s3:*BucketNotification
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:ListMultipartUploadParts
+                  - s3:AbortMultipartUpload                  
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${LogsBucketName}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${LogsBucketName}'
+          - PolicyName: backupPermissions
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+              - Effect: Allow
+                Action:
+                - backup:DescribeBackupJob
+                Resource: '*'                      
+          - PolicyName: logStreamPermissions
+            PolicyDocument:
+              Statement:                       
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:*:*:*'                        
+          - PolicyName: GlueAthenaPermissions
+            PolicyDocument:
+              Statement:
+              - Effect: Allow
+                Action:
+                  - athena:*
+                  - glue:*
+                Resource: '*'
+
+  ElastioStatusLogsDB:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref "AWS::AccountId"
+      DatabaseInput:
+        Description: ElastioStatusLogsDB
+        Name: elastio-logs-db
+  AthenaWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties: 
+      Name: !Sub "${AWS::StackName}-elastio-handler-for-aws-backup-wg"
+      RecursiveDeleteOption: true
+      State: ENABLED
+      WorkGroupConfiguration: 
+        ResultConfiguration: 
+          OutputLocation: !Sub 's3://${LogsBucketName}/elastio-logs/athena_results/'
+            
+Outputs:
+  StackName:
+    Value: !Ref AWS::StackName
