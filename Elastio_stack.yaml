@@ -27,7 +27,7 @@ Parameters:
   StackBinaryURL:
     Description: The URL for the StackBinary Zip File
     Type: String    
-    Default: 'https://observer-solution-artefacts.s3.us-west-2.amazonaws.com/aws-backup-elastio-integration.zip'    
+    Default: 'https://elastio-artifacts-us-east-2.s3.us-east-2.amazonaws.com/contrib/aws-backup-elastio-integration.zip'
   
 Resources: 
   SolutionLocalCacheBucket:
